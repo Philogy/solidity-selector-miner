@@ -3,5 +3,5 @@
 ### Usage
 
 ```bash
-cargo run --release aabbccdd "(address,uint256)" 8
+cargo run --release aabbccdd funcNameStart_ "(address,uint256)" 8
 ```

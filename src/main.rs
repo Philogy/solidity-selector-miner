@@ -1,13 +1,15 @@
-use tiny_keccak::{Keccak, Hasher};
+use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
 use structopt::StructOpt;
+use tiny_keccak::{Hasher, Keccak};
 
 extern crate hex;
 
 #[derive(StructOpt)]
 struct Args {
     selector: String,
+    head_name: String,
     params: String,
     #[structopt(default_value = "1")]
     threads: usize,
@@ -16,7 +18,7 @@ struct Args {
 fn main() {
     let args = Args::from_args();
 
-    let alphabet: [u8; 62] = [
+    let alphabet: [u8; 63] = [
         '0' as u8, '1' as u8, '2' as u8, '3' as u8, '4' as u8, '5' as u8, '6' as u8, '7' as u8,
         '8' as u8, '9' as u8, 'a' as u8, 'b' as u8, 'c' as u8, 'd' as u8, 'e' as u8, 'f' as u8,
         'g' as u8, 'h' as u8, 'i' as u8, 'j' as u8, 'k' as u8, 'l' as u8, 'm' as u8, 'n' as u8,
@@ -24,7 +26,7 @@ fn main() {
         'w' as u8, 'x' as u8, 'y' as u8, 'z' as u8, 'A' as u8, 'B' as u8, 'C' as u8, 'D' as u8,
         'E' as u8, 'F' as u8, 'G' as u8, 'H' as u8, 'I' as u8, 'J' as u8, 'K' as u8, 'L' as u8,
         'M' as u8, 'N' as u8, 'O' as u8, 'P' as u8, 'Q' as u8, 'R' as u8, 'S' as u8, 'T' as u8,
-        'U' as u8, 'V' as u8, 'W' as u8, 'X' as u8, 'Y' as u8, 'Z' as u8,
+        'U' as u8, 'V' as u8, 'W' as u8, 'X' as u8, 'Y' as u8, 'Z' as u8, '_' as u8,
     ];
 
     let mut target = [0u8; 4];
@@ -34,27 +36,26 @@ fn main() {
             .drain(0..4)
             .collect::<Vec<_>>(),
     );
-    
-    let params_length = args.params.len();
-    let mut params = [[0u8; 32]; 100];
-    for i in 0..params_length/32 {
-        params[i].copy_from_slice(&args.params.as_bytes()[i*32..(i+1)*32]);
-    }
-    if params_length % 32 > 0 {
-        params[params_length/32][0..params_length%32].copy_from_slice(
-            &args.params.as_bytes()[params_length/32*32..params_length]
-        );
-    }
+
+    let params = Arc::new(args.params);
+    let head = Arc::new(args.head_name);
 
     let args_threads = args.threads;
     let mut handles = vec![];
     for ti in 0..args.threads {
+        let new_head = Arc::clone(&head);
+        let new_params = Arc::clone(&params);
         handles.push(Some(thread::spawn(move || {
             let mut index = 0;
             let mut reported_index = 0;
             let mut last = Instant::now();
             let first = last;
-            
+
+            let mut head_vec: Vec<u8> = new_head.as_bytes().to_vec();
+            head_vec.push(alphabet[ti]);
+            let head_bytes = &head_vec[..];
+            let params_bytes = new_params.as_bytes();
+
             for i1 in 0..alphabet.len() {
                 for i2 in 0..alphabet.len() {
                     for i3 in 0..alphabet.len() {
@@ -75,13 +76,8 @@ fn main() {
                                     }
 
                                     let mut hasher = Keccak::v256();
+                                    hasher.update(head_bytes);
                                     hasher.update(&[
-                                        'f' as u8,
-                                        'u' as u8,
-                                        'n' as u8,
-                                        'c' as u8,
-                                        '_' as u8,
-                                        alphabet[ti],
                                         alphabet[i1],
                                         alphabet[i2],
                                         alphabet[i3],
@@ -89,18 +85,13 @@ fn main() {
                                         alphabet[i5],
                                         alphabet[i6],
                                     ]);
-                                    for i in 0..params_length/32 {
-                                        hasher.update(&params[i]);
-                                    }
-                                    for i in 0..params_length%32 {
-                                        hasher.update(&[params[params_length/32][i]]);
-                                    }
+                                    hasher.update(params_bytes);
 
                                     let mut res = [0u8; 4];
                                     hasher.finalize(&mut res);
                                     if &res[0..4] == &target[0..4] {
                                         println!(
-                                            "Found signature func_{} in {} seconds after {}M iterations",
+                                            "Found signature {} in {} seconds after {}M iterations",
                                             String::from_utf8(vec![
                                                 alphabet[ti],
                                                 alphabet[i1],
